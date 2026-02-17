@@ -3,6 +3,10 @@ using System.Threading;
 using Telegram.Bot;
 using Telegram.Bot.Types;
 using Telegram.Bot.Types.Enums;
+using TaskManagerBot;
+
+var taskService = new TaskService();
+
 
 const string fallbackTokenPlaceholder = "TG_BOT_TOKEN";
 var token = Environment.GetEnvironmentVariable("TELEGRAM_BOT_TOKEN") ?? fallbackTokenPlaceholder;
@@ -60,49 +64,121 @@ bot.OnMessage += async (Message msg, UpdateType updateType) =>
             return;
         }
                 // Команда /add
-        if (text.StartsWith("/add", StringComparison.OrdinalIgnoreCase))
+            if (text.StartsWith("/add", StringComparison.OrdinalIgnoreCase))
         {
             var parts = text.Split(' ', 2);
 
             if (parts.Length < 2 || string.IsNullOrWhiteSpace(parts[1]))
             {
-                await bot.SendMessage(msg.Chat, 
-                    "После команды /add напиши текст задачи.\nПример:\n/add Купить хлеб", 
+                await bot.SendMessage(msg.Chat,
+                    "После команды /add напиши текст задачи.",
                     cancellationToken: cts.Token);
                 return;
             }
 
-            var taskText = parts[1].Trim();
+            taskService.AddTask(msg.Chat.Id, parts[1].Trim());
 
-            if (!tasks.ContainsKey(msg.Chat.Id))
-                tasks[msg.Chat.Id] = new List<string>();
-
-            tasks[msg.Chat.Id].Add(taskText);
-
-            await bot.SendMessage(msg.Chat, $"Задача добавлена: {taskText}", cancellationToken: cts.Token);
+            await bot.SendMessage(msg.Chat,
+                "Задача добавлена.",
+                cancellationToken: cts.Token);
             return;
         }
 
-                // Команда /list
-        if (text.Equals("/list", StringComparison.OrdinalIgnoreCase))
+
+        // Команда /list
+                if (text.Equals("/list", StringComparison.OrdinalIgnoreCase))
         {
-            if (!tasks.ContainsKey(msg.Chat.Id) || tasks[msg.Chat.Id].Count == 0)
+            var userTasks = taskService.GetTasks(msg.Chat.Id);
+
+            if (userTasks.Count == 0)
             {
-                await bot.SendMessage(msg.Chat, "У тебя пока нет задач.", cancellationToken: cts.Token);
+                await bot.SendMessage(msg.Chat,
+                    "У тебя нет задач.",
+                    cancellationToken: cts.Token);
                 return;
             }
 
-            var userTasks = tasks[msg.Chat.Id];
             var response = "Твои задачи:\n\n";
 
             for (int i = 0; i < userTasks.Count; i++)
             {
-                response += $"{i + 1}. {userTasks[i]}\n";
+                var task = userTasks[i];
+                var status = task.IsCompleted ? "✅" : "❌";
+                response += $"{i + 1}. {status} {task.Title}\n";
             }
 
             await bot.SendMessage(msg.Chat, response, cancellationToken: cts.Token);
             return;
         }
+
+        // Команда /delete
+        if (text.StartsWith("/delete", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = text.Split(' ', 2);
+
+            if (parts.Length < 2 || !int.TryParse(parts[1], out int taskNumber))
+            {
+                await bot.SendMessage(msg.Chat,
+                    "Укажи номер задачи для удаления.\nПример:\n/delete 2",
+                    cancellationToken: cts.Token);
+                return;
+            }
+
+            if (!tasks.ContainsKey(msg.Chat.Id) || tasks[msg.Chat.Id].Count == 0)
+            {
+                await bot.SendMessage(msg.Chat,
+                    "У тебя нет задач для удаления.",
+                    cancellationToken: cts.Token);
+                return;
+            }
+
+            var userTasks = tasks[msg.Chat.Id];
+
+            if (taskNumber < 1 || taskNumber > userTasks.Count)
+            {
+                await bot.SendMessage(msg.Chat,
+                    "Такой задачи не существует.",
+                    cancellationToken: cts.Token);
+                return;
+            }
+
+            var removedTask = userTasks[taskNumber - 1];
+            userTasks.RemoveAt(taskNumber - 1);
+
+            await bot.SendMessage(msg.Chat,
+                $"Удалено: {removedTask}",
+                cancellationToken: cts.Token);
+
+            return;
+        }
+        // Выполнение задачи
+            if (text.StartsWith("/done", StringComparison.OrdinalIgnoreCase))
+        {
+            var parts = text.Split(' ', 2);
+
+            if (parts.Length < 2 || !int.TryParse(parts[1], out int number))
+            {
+                await bot.SendMessage(msg.Chat,
+                    "Пример: /done 1",
+                    cancellationToken: cts.Token);
+                return;
+            }
+
+            if (!taskService.CompleteTask(msg.Chat.Id, number - 1))
+            {
+                await bot.SendMessage(msg.Chat,
+                    "Такой задачи не существует.",
+                    cancellationToken: cts.Token);
+                return;
+            }
+
+            await bot.SendMessage(msg.Chat,
+                "Задача отмечена как выполненная ✅",
+                cancellationToken: cts.Token);
+            return;
+        }
+
+
 
 
 
